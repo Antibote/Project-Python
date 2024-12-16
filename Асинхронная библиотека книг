@@ -1,0 +1,119 @@
+from fastapi import FastAPI, HTTPException, Depends
+import typing
+import uvicorn
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import select
+
+# Создаем FastAPI приложение
+app = FastAPI()
+
+# Создаем асинхронный движок базы данных
+engine= create_async_engine('sqlite+aiosqlite:///books.db')
+# Создаем сессию для работы с базой данных
+new_session = async_sessionmaker(engine, expire_on_commit=False)
+
+# Функция get_session - это функция, которая будет возвращать сессию
+async def get_session():
+    # Начинаем транзакцию
+    async with new_session() as session:
+        # Возвращаем сессию
+        yield session
+
+# Тип SessionDep - это тип, который будет возвращать сессию
+# Depends(get_session) - это функция, которая будет вызываться при
+# каждом запросе, и она возвращает сессию
+SessionDep=typing.Annotated[AsyncSession, Depends(get_session)]
+
+# Создаем базовый класс для моделей
+class Base(DeclarativeBase):
+    pass
+
+# Создаем модель книги
+class BookModel(Base):
+    # Определяем таблицу, к которой относится модель
+    __tablename__ = 'books'
+
+    # Определяем id книги
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Определяем заголовок книги
+    title: Mapped[str]
+    # Определяем автора книги
+    author: Mapped[str]
+
+# POST запрос на создание базы данных
+@app.post('/setup_db')
+async def setup_datebase():
+    # Начинаем транзакцию
+    async with engine.begin() as conn:
+        # Создаем таблицы
+        await conn.run_sync(Base.metadata.create_all)
+        # Создаем индексы
+        await conn.run_sync(Base.metadata.create_all)
+    # Возвращаем ответ
+    return {'status': 'ok'}
+
+
+# Создаем схему для добавления книги
+class BookAddSchema(BaseModel):
+    # Определяем заголовок книги
+    title: str
+    # Определяем автора книги
+    author: str
+
+# Создаем схему для получения книги
+class BookSchema(BookAddSchema):
+    # Определяем id книги
+    id: int
+
+
+# POST запрос на добавление книги
+@app.post('/books')
+async def add_book(data: BookAddSchema, session: SessionDep):
+    # Создаем новую книгу
+    new_book = BookModel(
+        title=data.title,
+        author=data.author
+    )
+    # Добавляем книгу
+    session.add(new_book)
+    # Сохраняем изменения
+    await session.commit()
+    # Возвращаем ответ
+    return {'status': 'ok'}
+
+# GET запрос на получение книг
+@app.get('/books')
+async def get_book(session: SessionDep):
+    # Создаем запрос
+    query = select(BookModel)
+    # Выполняем запрос
+    result = await session.execute(query)
+    # Возвращаем результат
+    return result.scalars().all()
+
+# DELETE запрос на удаление книги
+@app.delete('/books/{book_id}')
+async def delete_book(book_id: int, session: SessionDep):
+    # Создаем запрос
+    query = select(BookModel).where(BookModel.id == book_id)
+    # Выполняем запрос
+    result = await session.execute(query)
+    # Получаем книгу
+    book = result.scalars().first()
+    # Если книги нет, то возвращаем ошибку
+    if book is None:
+        raise HTTPException(404, "Книга не найдена")
+    # Удаляем книгу
+    await session.delete(book)
+    # Сохраняем изменения
+    await session.commit()
+    # Возвращаем ответ
+    return {'status': 'ok'}
+
+if __name__ == "__main__":
+    # Запускаем uvicorn
+    uvicorn.run("main:app",reload=True)
+     
+
