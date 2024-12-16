@@ -1,0 +1,60 @@
+from fastapi import FastAPI, HTTPException
+import uvicorn
+from pydantic import BaseModel
+
+app = FastAPI()
+
+books = [
+    {"id": 1, 
+     "title": "The Great Gatsby", 
+     "author": "F. Scott Fitzgerald"},
+    {"id": 2, 
+     "title": "The Catcher in the Rye", 
+     "author": "J. D. Salinger"},
+    {"id": 3, 
+     "title": "To Kill a Mockingbird", 
+     "author": "Harper Lee"}
+]
+
+class NewBook(BaseModel):
+    title: str
+    author: str
+
+
+@app.get("/books/{book_id}", tags=['Книги'], summary="Посмотреть книгу")
+def get_books(book_id: int):
+    for book in books:
+        if book["id"] == book_id:
+            return book
+    else:
+        raise HTTPException(status_code=404, detail="Книга не найдена")
+
+
+@app.get("/books", tags=['Книги'], summary="Посмотреть все книги")
+def read_books():
+    return books
+
+
+@app.post("/books", tags=['Книги'], summary="Добавить книгу")
+def add_book(new_book: NewBook):
+    books.append({"id": len(books) + 1, 
+                  "title": new_book.title, 
+                  "author": new_book.author})
+    return {'success': True, 'message': 'Книга успешно добавлена'}
+
+@app.post("/books/{book_id}", tags=['Книги'], summary="Удалить книгу")
+def delete_book(book_id: int):
+    for book in books:
+        if book["id"] == book_id:
+            books.remove(book)
+            return {'success': True, 'message': 'Книга успешно удалена'}
+    else:
+        raise HTTPException(status_code=404, detail="Книга не найдена")
+
+
+
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app",reload=True)
+     
